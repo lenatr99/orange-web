@@ -1,12 +1,12 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import DevPage from './DevPage'; // DevPage is where you'll implement the circle drawing
+import DevPage from './DevPage'; // This is your component for drawing circles
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/orange/dev" element={<DevPage />} />
+        <Route path="/orange/:id" element={<DevPage />} />
         // Define other routes here
       </Routes>
     </Router>
