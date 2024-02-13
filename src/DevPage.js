@@ -2,6 +2,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 
+const randomWords = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
+
+function getRandomWord(exclude = []) {
+  const availableWords = randomWords.filter(word => !exclude.includes(word));
+  return availableWords[Math.floor(Math.random() * availableWords.length)];
+}
+
 function DevPage() {
   const { id } = useParams();
   const [circles, setCircles] = useState([]);
@@ -14,6 +21,9 @@ function DevPage() {
   const isDraggingEarRight = useRef(false);
   const DRAG_THRESHOLD = 20;
   const [tempLine, setTempLine] = useState(null);
+  const earLength = 25; // Length of the ear border
+  const earStrokeWidth = 2; // Width of the ear stroke
+  const earDashArray = "5,2"; // Pattern of dashes and gaps
 
   
   useEffect(() => {
@@ -33,6 +43,10 @@ function DevPage() {
             return [...prevCircles, data.circle];
           }
         });
+      } else if (data.type === 'update-circle-name') {
+        // Handle incoming name change
+        const { circleId, newName } = data;
+        setCircles(prevCircles => prevCircles.map(circle => circle.id === circleId ? { ...circle, name: newName } : circle));
       } else if (data.type === 'new-connection' || data.type === 'update-connection') {
         setConnections(prevConnections => {
           const existingIndex = prevConnections.findIndex(c => c.id === data.connection.id);
@@ -134,6 +148,20 @@ const handleMouseUp = (e) => {
   const rect = svg.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
+  
+  const isEndingOnSameCircle = circles.some(circle => {
+    const distance = Math.sqrt((mouseX - circle.x) ** 2 + (mouseY - circle.y) ** 2);
+    return distance < circle.r + 5 && circle.id === dragStartCircleId.current;
+  });
+
+  if (isEndingOnSameCircle) {
+    // If dragging ends on the same circle, do nothing
+    isDraggingEarRight.current = false;
+    isDraggingEarLeft.current = false;
+    dragStartCircleId.current = null;
+    setTempLine(null);
+    return; // Exit the function to prevent any further action
+  }
 
   const targetCircle = circles.find(circle => {
     // We calculate distance to both ears and see if any is within a clickable range
@@ -141,7 +169,7 @@ const handleMouseUp = (e) => {
     const rightEarX = circle.x + 35;
     const distanceToLeftEar = Math.sqrt((leftEarX - mouseX) ** 2 + (circle.y - mouseY) ** 2);
     const distanceToRightEar = Math.sqrt((rightEarX - mouseX) ** 2 + (circle.y - mouseY) ** 2);
-    return (distanceToLeftEar < 10 || distanceToRightEar < 10) && circle.id !== dragStartCircleId.current;
+    return (distanceToLeftEar < 50 || distanceToRightEar < 50) && circle.id !== dragStartCircleId.current;
   });
 
   if (targetCircle) {
@@ -153,6 +181,37 @@ const handleMouseUp = (e) => {
       lr: lr
     };
     setConnections([...connections, newConnection]);
+    ws.current.send(JSON.stringify({ type: 'new-connection', connection: newConnection }));
+  }
+
+  if (!targetCircle) {
+    const currentNames = circles.map(c => c.name);
+    const newCircle = {
+      id: uuidv4(),
+      x: mouseX,
+      y: mouseY,
+      r: 28,
+      color: "orange",
+      name: getRandomWord(currentNames),
+    };
+
+    // Add the new circle to the state
+    setCircles([...circles, newCircle]);
+
+    // Create a new connection from the ear being dragged to the new circle
+    const lr = isDraggingEarLeft.current ? 0 : 1;
+    const newConnection = {
+      id: uuidv4(),
+      startId: dragStartCircleId.current,
+      endId: newCircle.id,
+      lr: lr
+    };
+
+    // Add the new connection to the state
+    setConnections([...connections, newConnection]);
+
+    // Send the new circle and connection to the server
+    ws.current.send(JSON.stringify({ type: 'new-circle', circle: newCircle }));
     ws.current.send(JSON.stringify({ type: 'new-connection', connection: newConnection }));
   }
 
@@ -173,36 +232,84 @@ const handleMouseUp = (e) => {
   }, [circles, connections]);
 
   const renderRightEars = (circle) => {
-    // Adjust these values to position the ears correctly relative to your circles
-    const earOffset = 35;
-    const earRadius = 5;
+    const isDraggingThisRightEar = isDraggingEarRight.current && dragStartCircleId.current === circle.id;
+    const isConnectedRight = connections.some(conn => conn.startId === circle.id && conn.lr === 1) || connections.some(conn => conn.endId === circle.id && conn.lr === 0);
+    const strokeDasharray = isConnectedRight || isDraggingThisRightEar ? "none" : "3,8";
+    const earRadius = circle.r + 8; 
+    const earStrokeWidth = 3;
+    const transparentStrokeWidth = earStrokeWidth * 5; 
+    const startAngleOffset = 9;
+    const tiltOffset = 5;
+    const d = `
+      M ${circle.x + 23} ,${circle.y - 22 - tiltOffset} 
+      a ${earRadius},${earRadius} 0 0,1.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
+    `;
+
     return (
-      <circle
-        cx={circle.x + earOffset}
-        cy={circle.y}
-        r={earRadius}
-        fill="grey"
-        onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
-        style={{ cursor: 'pointer' }}
-      />
+      <>
+        <path
+          d={d}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={transparentStrokeWidth}
+          strokeLinecap="round"
+          onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
+        <path
+          d={d}
+          fill="none"
+          stroke={isConnectedRight || isDraggingThisRightEar ? "#9cacb4" : "#cdd5d9"} // Solid color if connected
+          strokeWidth={earStrokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={strokeDasharray}
+          onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
+      </>
+    );
+  };
+  
+
+  const renderLeftEars = (circle) => {
+    const isDraggingThisLeftEar = isDraggingEarLeft.current && dragStartCircleId.current === circle.id;
+    const isConnectedLeft = connections.some(conn => conn.endId === circle.id && conn.lr === 1) || connections.some(conn => conn.startId === circle.id && conn.lr === 0);
+    const strokeDasharray = isConnectedLeft || isDraggingThisLeftEar ? "none" : "3,8";
+    const earRadius = circle.r + 8;
+    const earStrokeWidth = 3;
+    const transparentStrokeWidth = earStrokeWidth * 5; 
+    const startAngleOffset = 9;
+    const tiltOffset = -5;
+    const d = `
+      M ${circle.x - 23} ,${circle.y - 22 + tiltOffset}  
+      a ${earRadius},${earRadius} 0 0,0.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
+    `;
+  
+    return (
+      <>
+        <path
+          d={d}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={transparentStrokeWidth}
+          strokeLinecap="round"
+          onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
+        <path
+          d={d}
+          fill="none"
+          stroke={isConnectedLeft || isDraggingThisLeftEar ? "#9cacb4" : "#cdd5d9"} // Solid color if connected
+          strokeWidth={earStrokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={strokeDasharray}
+          onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
+      </>
     );
   };
 
-  const renderLeftEars = (circle) => {
-    // Adjust these values to position the ears correctly relative to your circles
-    const earOffset = 35;
-    const earRadius = 5;
-    return (
-      <circle
-        cx={circle.x - earOffset}
-        cy={circle.y}
-        r={earRadius}
-        fill="grey"
-        onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
-        style={{ cursor: 'pointer' }}
-      />
-    );
-  };
 
   const renderConnections = () => connections.map(conn => {
     const startCircle = circles.find(c => c.id === conn.startId);
@@ -219,7 +326,7 @@ const handleMouseUp = (e) => {
   
     const d = `M${startEarX},${startCircle.y} C${cp1x},${startCircle.y} ${cp2x},${endCircle.y} ${endEarX},${endCircle.y}`;
   
-    return <path key={conn.id} d={d} stroke="grey" fill="none" />;
+    return <path key={conn.id} d={d} stroke="#9cacb4" strokeWidth="2" fill="none" />;
   });
   
 
@@ -242,12 +349,10 @@ const handleMouseUp = (e) => {
 
   const handleSvgClick = (e) => {
       if (isDraggingEarLeft.current) {
-          // Early return if we're dragging an ear, to avoid creating a new circle
           return;
       }
 
       if (isDraggingEarRight.current) {
-        // Early return if we're dragging an ear, to avoid creating a new circle
         return;
     }
 
@@ -260,11 +365,74 @@ const handleMouseUp = (e) => {
           return distance < circle.r + 10; // Adding a margin to ensure clicks near the edge are recognized
       });
       if (!clickIsInsideACircle) {
-          const newCircle = { id: uuidv4(), x, y, r: 28, color: "orange" };
-          setCircles([...circles, newCircle]);
-          ws.current.send(JSON.stringify({ type: 'new-circle', circle: newCircle }));
+        const currentNames = circles.map(c => c.name);
+        const newCircle = {
+          id: uuidv4(),
+          x,
+          y,
+          r: 28,
+          color: "orange",
+          name: getRandomWord(currentNames), // Assign a random unique name
+        };
+        setCircles([...circles, newCircle]);
+        ws.current.send(JSON.stringify({ type: 'new-circle', circle: newCircle }));
       }
   };
+
+  const handleChangeName = (e, circleId) => {
+    e.stopPropagation(); // Prevent the click event from reaching the SVG element
+  
+    const currentNames = circles.map(c => c.name);
+    const newName = getRandomWord(currentNames.filter(name => name !== circles.find(c => c.id === circleId).name));
+    
+    const updatedCircles = circles.map(circle => {
+      if (circle.id === circleId) {
+        return { ...circle, name: newName };
+      }
+      return circle;
+    });
+  
+    setCircles(updatedCircles);
+    
+    // Send the name change to the server
+    ws.current.send(JSON.stringify({ type: 'update-circle-name', circleId: circleId, newName: newName }));
+  };
+  
+
+  const renderCircleNames = (circle) => {
+    const name = circle.name || "";
+    // Measure text size (approximation)
+    const padding = 4; // Add some padding around the text
+    const rectHeight = 20; // Approximate height of the text
+    const rectWidth = name.length * 8; // Approximate width of the text
+    
+    return (
+      <>
+        {/* Transparent rectangle for easier clicking */}
+        <rect
+          x={circle.x - rectWidth / 2 - padding / 2}
+          y={circle.y + circle.r + 2} // Slightly above the text to avoid overlapping
+          width={rectWidth + padding}
+          height={rectHeight}
+          fill="transparent" // Change this to a visible color if you want to see the clickable area
+          onClick={(e) => handleChangeName(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
+        {/* The text element */}
+        <text
+          x={circle.x}
+          y={circle.y + circle.r + 15} // Adjusted to align with the bottom of the rectangle
+          fontSize="12"
+          textAnchor="middle"
+          style={{ cursor: 'pointer', userSelect: 'none' }}
+          onClick={(e) => handleChangeName(e, circle.id)}
+        >
+          {circle.name}
+        </text>
+      </>
+    );
+  };
+  
 
   return (
     <svg style={{ width: '100%', height: '100vh' }} onClick={handleSvgClick}>
@@ -281,14 +449,15 @@ const handleMouseUp = (e) => {
         />
         {renderRightEars(circle)}
         {renderLeftEars(circle)}
+        {renderCircleNames(circle)}
       </React.Fragment>
       ))}
       {renderConnections()}
       {tempLine && (
         <path
           d={`M${tempLine.x1},${tempLine.y1} C${tempLine.cp1x},${tempLine.cp1y} ${tempLine.cp2x},${tempLine.cp2y} ${tempLine.x2},${tempLine.y2}`}
-          stroke="grey"
-          strokeWidth="1"
+          stroke="#9cacb4"
+          strokeWidth="2"
           fill="none"
         />
       )}

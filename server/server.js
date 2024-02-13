@@ -36,13 +36,18 @@ wss.on('connection', function connection(ws, request, id) {
   console.log(`Connected to canvas: ${id}`);
   if (!canvasStates[id]) {
     canvasStates[id] = {
-      clients: new Set(),
-      circles: []
+        clients: new Set(),
+        circles: [],
+        connections: []
     };
   }
   const state = canvasStates[id];
   state.clients.add(ws);
-  ws.send(JSON.stringify({ type: 'initial-circles', circles: state.circles }));
+  ws.send(JSON.stringify({ 
+    type: 'initial-circles', 
+    circles: state.circles,
+    connections: state.connections
+  }));
   ws.on('message', function incoming(message) {
     const data = JSON.parse(message);
 
@@ -64,6 +69,27 @@ wss.on('connection', function connection(ws, request, id) {
             if (circleIndex !== -1) {
               state.circles[circleIndex].color = data.circle.color;
               broadcastMessage(id, JSON.stringify({ type: 'update-circle-color', circle: data.circle }), ws);
+            }
+            break;
+        case 'new-connection':
+            const newConnection = { ...data.connection, id: data.connection.id || uuidv4() }; // Ensure a unique ID
+            state.connections.push(newConnection);
+            broadcastMessage(id, JSON.stringify({ type: 'new-connection', connection: newConnection }), ws);
+            break;
+        case 'update-connection':
+            const connectionIndex = state.connections.findIndex(conn => conn.id === data.connection.id);
+            if (connectionIndex !== -1) {
+                state.connections[connectionIndex] = data.connection;
+                broadcastMessage(id, JSON.stringify({ type: 'update-connection', connection: data.connection }), ws);
+            }
+            break;
+        case 'update-circle-name':
+            // Find the circle by ID and update its name
+            const circleIndex2 = state.circles.findIndex(circle => circle.id === data.circleId);
+            if (circleIndex !== -1) {
+              state.circles[circleIndex2].name = data.newName;
+              // Broadcast the name change to all clients connected to this canvas
+              broadcastMessage(id, JSON.stringify({ type: 'update-circle-name', circleId: data.circleId, newName: data.newName }), ws);
             }
             break;
     }
