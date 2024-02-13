@@ -86,7 +86,7 @@ wss.on('connection', function connection(ws, request, id) {
         case 'update-circle-name':
             // Find the circle by ID and update its name
             const circleIndex2 = state.circles.findIndex(circle => circle.id === data.circleId);
-            if (circleIndex !== -1) {
+            if (circleIndex2 !== -1) {
               state.circles[circleIndex2].name = data.newName;
               // Broadcast the name change to all clients connected to this canvas
               broadcastMessage(id, JSON.stringify({ type: 'update-circle-name', circleId: data.circleId, newName: data.newName }), ws);
