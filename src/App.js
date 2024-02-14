@@ -7,7 +7,6 @@ function App() {
     <Router>
       <Routes>
         <Route path="/orange/:id" element={<DevPage />} />
-        // Define other routes here
       </Routes>
     </Router>
   );

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
+import { debounce } from 'lodash';
 
 const randomWords = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
 
@@ -44,10 +45,20 @@ function DevPage() {
           }
         });
       } else if (data.type === 'update-circle-name') {
-        // Handle incoming name change
-        const { circleId, newName } = data;
-        setCircles(prevCircles => prevCircles.map(circle => circle.id === circleId ? { ...circle, name: newName } : circle));
-      } else if (data.type === 'new-connection' || data.type === 'update-connection') {
+        // Assume each message has a timestamp or sequence number
+        const existingCircle = circles.find(c => c.id === data.circleId);
+        if (existingCircle) {
+          // Only update if the incoming message is newer than the current state
+          if (data.timestamp > existingCircle.lastUpdated) {
+            setCircles(prevCircles =>
+              prevCircles.map(circle =>
+                circle.id === data.circleId ? { ...circle, name: data.newName, lastUpdated: data.timestamp } : circle
+              )
+            );
+          }
+        }
+      }
+       else if (data.type === 'new-connection' || data.type === 'update-connection') {
         setConnections(prevConnections => {
           const existingIndex = prevConnections.findIndex(c => c.id === data.connection.id);
           if (existingIndex > -1) {
@@ -58,6 +69,7 @@ function DevPage() {
         });
       }
     };
+    
     return () => {
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         ws.current.close();
@@ -379,24 +391,39 @@ const handleMouseUp = (e) => {
       }
   };
 
-  const handleChangeName = (e, circleId) => {
-    e.stopPropagation(); // Prevent the click event from reaching the SVG element
+
   
-    const currentNames = circles.map(c => c.name);
-    const newName = getRandomWord(currentNames.filter(name => name !== circles.find(c => c.id === circleId).name));
-    
-    const updatedCircles = circles.map(circle => {
-      if (circle.id === circleId) {
-        return { ...circle, name: newName };
-      }
-      return circle;
-    });
-  
-    setCircles(updatedCircles);
-    
-    // Send the name change to the server
-    ws.current.send(JSON.stringify({ type: 'update-circle-name', circleId: circleId, newName: newName }));
-  };
+// Assuming the rest of your component remains the same.
+
+// Adjust your handleChangeName function:
+const handleChangeName = (e, circleId) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Immediate call to update the name to ensure UI responsiveness.
+  const currentCircle = circles.find(c => c.id === circleId);
+  if (!currentCircle) return; // Guard clause if circle not found
+
+  const currentNames = circles.map(c => c.name).filter(name => name !== currentCircle.name);
+  const newName = getRandomWord(currentNames);
+
+  // Ensure the newName is different and valid
+  if (newName && currentCircle.name !== newName) {
+    // Optimistically update the local state to reflect the change
+    setCircles(prevCircles =>
+      prevCircles.map(circle =>
+        circle.id === circleId ? { ...circle, name: newName, lastUpdated: Date.now() } : circle
+      )
+    );
+
+    console.log('Sending update to server:', { circleId, newName });
+
+    // Send the update to the server
+    ws.current.send(JSON.stringify({ type: 'update-circle-name', circleId, newName }));
+  }
+};
+
+
   
 
   const renderCircleNames = (circle) => {
@@ -408,27 +435,24 @@ const handleMouseUp = (e) => {
     
     return (
       <>
-        {/* Transparent rectangle for easier clicking */}
-        <rect
-          x={circle.x - rectWidth / 2 - padding / 2}
-          y={circle.y + circle.r + 2} // Slightly above the text to avoid overlapping
-          width={rectWidth + padding}
-          height={rectHeight}
-          fill="transparent" // Change this to a visible color if you want to see the clickable area
-          onClick={(e) => handleChangeName(e, circle.id)}
-          style={{ cursor: 'pointer' }}
-        />
-        {/* The text element */}
         <text
           x={circle.x}
           y={circle.y + circle.r + 15} // Adjusted to align with the bottom of the rectangle
           fontSize="12"
           textAnchor="middle"
           style={{ cursor: 'pointer', userSelect: 'none' }}
-          onClick={(e) => handleChangeName(e, circle.id)}
         >
           {circle.name}
         </text>
+        <rect
+          x={circle.x - rectWidth / 2 - padding / 2}
+          y={circle.y + circle.r + 2} 
+          width={rectWidth + padding}
+          height={rectHeight}
+          fill="transparent" 
+          onClick={(e) => handleChangeName(e, circle.id)}
+          style={{ cursor: 'pointer' }}
+        />
       </>
     );
   };
