@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { debounce } from 'lodash';
+import './DevPage.css'; 
 
 const randomWords = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
 
@@ -22,9 +22,10 @@ function DevPage() {
   const isDraggingEarRight = useRef(false);
   const DRAG_THRESHOLD = 20;
   const [tempLine, setTempLine] = useState(null);
-  const earLength = 25; // Length of the ear border
-  const earStrokeWidth = 2; // Width of the ear stroke
-  const earDashArray = "5,2"; // Pattern of dashes and gaps
+  const [hoveredEar, setHoveredEar] = useState(null);
+  const hoverTargetRefRight = useRef(null);
+  const hoverTargetRefLeft = useRef(null);
+
 
   
   useEffect(() => {
@@ -78,6 +79,7 @@ function DevPage() {
   }, [id]);
 
   const handleCircleMouseDown = (e, circleId) => {
+    console.log(`Circle mouse down: ${circleId}`);
     // Prevent interaction with ears when moving circles
     if (isDraggingEarLeft.current || isDraggingEarRight.current) return;
     isDragging.current = false;
@@ -103,6 +105,7 @@ function DevPage() {
   };
 
   const handleEarMouseDownLeft = (e, circleId) => {
+    console.log(`Left ear mouse down: ${circleId}`);
     // Prevent default event and bubbling to avoid triggering circle drag
     e.preventDefault();
     e.stopPropagation();
@@ -112,6 +115,7 @@ function DevPage() {
   };
 
   const handleEarMouseDownRight = (e, circleId) => {
+    console.log(`Right ear mouse down: ${circleId}`);
     // Prevent default event and bubbling to avoid triggering circle drag
     e.preventDefault();
     e.stopPropagation();
@@ -120,40 +124,9 @@ function DevPage() {
     earDragStartPos.current = { x: e.clientX, y: e.clientY };
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDraggingEarRight.current && !isDraggingEarLeft.current) return;
-  
-    const svg = document.querySelector("svg");
-    const rect = svg.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-  
-    const startCircle = circles.find(c => c.id === dragStartCircleId.current);
-    if (!startCircle) return;
-  
-    // Choose the start point based on the ear being dragged
-    const startEarX = isDraggingEarLeft.current ? startCircle.x - 35 : startCircle.x + 35;
-    const endEarX = mouseX;
-  
-    // Calculate control points for a sigmoid-like curve
-    const cp1x = isDraggingEarLeft.current ? startEarX - Math.abs(startEarX - endEarX) / 3 : startEarX + Math.abs(startEarX - endEarX) / 3;
-    const cp2x = isDraggingEarLeft.current ? endEarX + Math.abs(startEarX - endEarX) / 3 : endEarX - Math.abs(startEarX - endEarX) / 3;
-  
-    setTempLine({
-      x1: startEarX, // Start point X
-      y1: startCircle.y, // Start point Y
-      x2: endEarX, // End point X (mouse X)
-      y2: mouseY, // End point Y (mouse Y)
-      cp1x: cp1x, // Control point 1 X
-      cp1y: startCircle.y, // Control point 1 Y
-      cp2x: cp2x, // Control point 2 X
-      cp2y: mouseY // Control point 2 Y
-    });
-  };
-  
-  
 
 const handleMouseUp = (e) => {
+  console.log('Mouse up');
   if (!isDraggingEarRight.current && !isDraggingEarLeft.current) return;
 
   const svg = document.querySelector("svg");
@@ -243,10 +216,14 @@ const handleMouseUp = (e) => {
     };
   }, [circles, connections]);
 
+
+
   const renderRightEars = (circle) => {
     const isDraggingThisRightEar = isDraggingEarRight.current && dragStartCircleId.current === circle.id;
     const isConnectedRight = connections.some(conn => conn.startId === circle.id && conn.lr === 1) || connections.some(conn => conn.endId === circle.id && conn.lr === 0);
-    const strokeDasharray = isConnectedRight || isDraggingThisRightEar ? "none" : "3,8";
+    const isSameCircleDrag = dragStartCircleId.current === circle.id && isDraggingEarLeft.current;
+    const isPotentialConnectionRight = hoverTargetRefRight.current === circle.id && isDraggingEarLeft.current && dragStartCircleId.current !== circle.id;
+    const strokeDasharray = isConnectedRight || isDraggingThisRightEar || isPotentialConnectionRight ? "none" : "3,8";
     const earRadius = circle.r + 8; 
     const earStrokeWidth = 3;
     const transparentStrokeWidth = earStrokeWidth * 5; 
@@ -256,9 +233,24 @@ const handleMouseUp = (e) => {
       M ${circle.x + 23} ,${circle.y - 22 - tiltOffset} 
       a ${earRadius},${earRadius} 0 0,1.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
     `;
+    const isHovered = hoveredEar === `right-${circle.id}` && !isSameCircleDrag;
+    const transitionStyle = {
+      transition: 'stroke 0.1s ease-in-out',
+    };
+    const disableHover = isDraggingEarRight.current;
+  
 
     return (
       <>
+        <path
+          d={d}
+          fill="none"
+          stroke={(isHovered || isConnectedRight || isDraggingThisRightEar || isPotentialConnectionRight) ? "#9cacb4" : "#cdd5d9"}
+          strokeWidth={earStrokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={strokeDasharray}
+          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
+        />
         <path
           d={d}
           fill="none"
@@ -266,17 +258,20 @@ const handleMouseUp = (e) => {
           strokeWidth={transparentStrokeWidth}
           strokeLinecap="round"
           onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
-          style={{ cursor: 'pointer' }}
-        />
-        <path
-          d={d}
-          fill="none"
-          stroke={isConnectedRight || isDraggingThisRightEar ? "#9cacb4" : "#cdd5d9"} // Solid color if connected
-          strokeWidth={earStrokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={strokeDasharray}
-          onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
-          style={{ cursor: 'pointer' }}
+          onMouseEnter={() => {
+            if (!disableHover) {
+              console.log(`Mouse enter right ear: ${circle.id}`);
+              setHoveredEar(`right-${circle.id}`);
+              console.log('Setting right hover target:', circle.id);
+              hoverTargetRefRight.current = circle.id;
+            }
+          }}
+          onMouseLeave={() => {
+            console.log(`Mouse leave right ear: ${circle.id}`);
+            setHoveredEar(null);
+            hoverTargetRefRight.current = null;
+          }}
+          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
         />
       </>
     );
@@ -286,7 +281,9 @@ const handleMouseUp = (e) => {
   const renderLeftEars = (circle) => {
     const isDraggingThisLeftEar = isDraggingEarLeft.current && dragStartCircleId.current === circle.id;
     const isConnectedLeft = connections.some(conn => conn.endId === circle.id && conn.lr === 1) || connections.some(conn => conn.startId === circle.id && conn.lr === 0);
-    const strokeDasharray = isConnectedLeft || isDraggingThisLeftEar ? "none" : "3,8";
+    const isSameCircleDrag = dragStartCircleId.current === circle.id && isDraggingEarRight.current
+    const isPotentialConnection = hoverTargetRefLeft.current === circle.id && isDraggingEarRight.current && dragStartCircleId.current !== circle.id;
+    const strokeDasharray = isConnectedLeft || isDraggingThisLeftEar || isPotentialConnection ? "none" : "3,8";
     const earRadius = circle.r + 8;
     const earStrokeWidth = 3;
     const transparentStrokeWidth = earStrokeWidth * 5; 
@@ -296,9 +293,24 @@ const handleMouseUp = (e) => {
       M ${circle.x - 23} ,${circle.y - 22 + tiltOffset}  
       a ${earRadius},${earRadius} 0 0,0.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
     `;
+    const isHovered = hoveredEar === `left-${circle.id}` && !isSameCircleDrag;
+    const transitionStyle = {
+      transition: 'stroke 0.1s ease-in-out',
+    };
+    const disableHover = isDraggingEarLeft.current;
+    
   
     return (
       <>
+        <path
+          d={d}
+          fill="none"
+          stroke={(isHovered || isConnectedLeft || isDraggingThisLeftEar ||  isPotentialConnection)  ? "#9cacb4" : "#cdd5d9"}
+          strokeWidth={earStrokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={strokeDasharray}
+          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
+        />
         <path
           d={d}
           fill="none"
@@ -306,22 +318,96 @@ const handleMouseUp = (e) => {
           strokeWidth={transparentStrokeWidth}
           strokeLinecap="round"
           onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
-          style={{ cursor: 'pointer' }}
-        />
-        <path
-          d={d}
-          fill="none"
-          stroke={isConnectedLeft || isDraggingThisLeftEar ? "#9cacb4" : "#cdd5d9"} // Solid color if connected
-          strokeWidth={earStrokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={strokeDasharray}
-          onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
-          style={{ cursor: 'pointer' }}
+          onMouseEnter={() => {
+            if (!disableHover) {
+              console.log(`Mouse enter left ear: ${circle.id}`);
+              setHoveredEar(`left-${circle.id}`);
+              console.log('Setting left hover target:', circle.id);
+              hoverTargetRefLeft.current = circle.id;
+              
+            }
+          }}
+          onMouseLeave={() => {
+            console.log(`Mouse leave left ear: ${circle.id}`);
+            setHoveredEar(null);
+            hoverTargetRefLeft.current = null;
+          }}
+          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
         />
       </>
     );
   };
 
+
+  const handleMouseMove = (e) => {
+    console.log('Mouse move');
+    if (!isDraggingEarRight.current && !isDraggingEarLeft.current) return;
+  
+    const svg = document.querySelector("svg");
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+  
+    const startCircle = circles.find(c => c.id === dragStartCircleId.current);
+    if (!startCircle) return;
+
+    // Choose the start point based on the ear being dragged
+    const startEarX = isDraggingEarLeft.current ? startCircle.x - 35 : startCircle.x + 35;
+    const endEarX = mouseX;
+  
+    // Calculate control points for a sigmoid-like curve
+    const cp1x = isDraggingEarLeft.current ? startEarX - Math.abs(startEarX - endEarX) / 3 : startEarX + Math.abs(startEarX - endEarX) / 3;
+    const cp2x = isDraggingEarLeft.current ? endEarX + Math.abs(startEarX - endEarX) / 3 : endEarX - Math.abs(startEarX - endEarX) / 3;
+
+    if (hoverTargetRefLeft.current && startCircle.id !== hoverTargetRefLeft.current) {
+      console.log('Hover left target:', hoverTargetRefLeft.current);
+      // Adjust tempLine to directly connect to hoverTarget's left ear
+      const targetCircle = circles.find(c => c.id === hoverTargetRefLeft.current);
+      if (targetCircle) {
+        setTempLine({
+          x1: startEarX,
+          y1: startCircle.y,
+          x2: targetCircle.x - 35, // Target circle's left ear position
+          y2: targetCircle.y,
+          cp1x: startEarX + Math.abs(startEarX - endEarX) / 3, // Control point 1 X
+          cp1y: startCircle.y, // Control point 1 Y
+          cp2x: (targetCircle.x - 35) - Math.abs(startEarX - (targetCircle.x - 35)) / 3, // Control point 2 X
+          cp2y: targetCircle.y
+        });
+      }
+    } else if (hoverTargetRefRight.current && startCircle.id !== hoverTargetRefRight.current) {
+      console.log('Hover right target:', hoverTargetRefRight.current);
+      // Adjust tempLine to directly connect to hoverTarget's rigth ear
+      const targetCircle = circles.find(c => c.id === hoverTargetRefRight.current);
+      if (targetCircle) {
+        setTempLine({
+          x1: startEarX,
+          y1: startCircle.y,
+          x2: targetCircle.x + 35, // Target circle's left ear position
+          y2: targetCircle.y,
+          cp1x: startEarX - Math.abs(startEarX - endEarX) / 3, // Control point 1 X
+          cp1y: startCircle.y, // Control point 1 Y
+          cp2x: (targetCircle.x + 35) + Math.abs(startEarX - (targetCircle.x + 35)) / 3, // Control point 2 X
+          cp2y: targetCircle.y
+        });
+      }
+    } else {
+  
+
+      setTempLine({
+        x1: startEarX, // Start point X
+        y1: startCircle.y, // Start point Y
+        x2: endEarX, // End point X (mouse X)
+        y2: mouseY, // End point Y (mouse Y)
+        cp1x: cp1x, // Control point 1 X
+        cp1y: startCircle.y, // Control point 1 Y
+        cp2x: cp2x, // Control point 2 X
+        cp2y: mouseY // Control point 2 Y
+      });
+    }
+  };
+  
+  
 
   const renderConnections = () => connections.map(conn => {
     const startCircle = circles.find(c => c.id === conn.startId);
@@ -333,8 +419,8 @@ const handleMouseUp = (e) => {
     const endEarX = conn.lr === 0 ? endCircle.x + 35 : endCircle.x - 35;
   
     // Adjust control points to make the curve aesthetically pleasing
-    const cp1x = conn.lr === 0 ? startEarX - 40 : startEarX + 40;
-    const cp2x = conn.lr === 0 ? endEarX + 40 : endEarX - 40;
+    const cp1x = conn.lr === 0 ? startEarX - Math.abs(startEarX - endEarX) / 3 : startEarX + Math.abs(startEarX - endEarX) / 3;
+    const cp2x = conn.lr === 0 ? endEarX + Math.abs(startEarX - endEarX) / 3 : endEarX - Math.abs(startEarX - endEarX) / 3;
   
     const d = `M${startEarX},${startCircle.y} C${cp1x},${startCircle.y} ${cp2x},${endCircle.y} ${endEarX},${endCircle.y}`;
   
@@ -391,11 +477,6 @@ const handleMouseUp = (e) => {
       }
   };
 
-
-  
-// Assuming the rest of your component remains the same.
-
-// Adjust your handleChangeName function:
 const handleChangeName = (e, circleId) => {
   e.preventDefault();
   e.stopPropagation();
@@ -469,11 +550,26 @@ const handleChangeName = (e, circleId) => {
           fill={circle.color || "orange"} 
           onMouseDown={(e) => handleCircleMouseDown(e, circle.id)}
           onDoubleClick={(e) => handleDoubleClick(e, circle.id)}
+          onMouseEnter={() => {
+            console.log('isdraggingearright', isDraggingEarRight.current, 'isdraggingearleft', isDraggingEarLeft.current)
+            if (isDraggingEarLeft.current && dragStartCircleId.current !== circle.id) {
+              console.log(`hovered left circle: ${circle.id}`);
+              hoverTargetRefRight.current = circle.id;
+            }
+            else if (isDraggingEarRight.current && dragStartCircleId.current !== circle.id) {
+              console.log(`hovered right circle: ${circle.id}`);
+              hoverTargetRefLeft.current = circle.id;
+            }
+          }}
+          onMouseLeave={() => {
+              hoverTargetRefRight.current = null;
+              hoverTargetRefLeft.current = circle.null;
+          }}
           style={{ cursor: 'pointer' }}
         />
+        {renderCircleNames(circle)}
         {renderRightEars(circle)}
         {renderLeftEars(circle)}
-        {renderCircleNames(circle)}
       </React.Fragment>
       ))}
       {renderConnections()}
@@ -483,6 +579,7 @@ const handleChangeName = (e, circleId) => {
           stroke="#9cacb4"
           strokeWidth="2"
           fill="none"
+          style={{ pointerEvents: 'none' }}
         />
       )}
     </svg>

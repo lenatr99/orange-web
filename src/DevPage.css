@@ -1,0 +1,8 @@
+/* DevPage.css */
+.ear-hoverable:hover {
+    cursor: pointer;
+  }
+  .ear-dragging {
+    cursor: grabbing; /* or whatever cursor style you prefer during drag operations */
+  }
+  
