@@ -26,286 +26,225 @@ function DevPage() {
   const hoverTargetRefRight = useRef(null);
   const hoverTargetRefLeft = useRef(null);
 
-
-  
+  // useEffect is a React hook for managing side effects in function components
   useEffect(() => {
+    // Initialize WebSocket connection
     ws.current = new WebSocket(`ws://localhost:8080/orange/${id}`);
-    ws.current.onopen = () => console.log('Connected to WebSocket server for canvas:', id);
+    ws.current.onopen = () => console.log(`Connected to WebSocket server for canvas: ${id}`);
+  
+    // Handle incoming WebSocket messages
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
+  
+      // Handle initial setup of circles and connections
       if (data.type === 'initial-circles') {
         setCircles(data.circles);
         setConnections(data.connections || []);
-      } else if (data.type === 'new-circle' || data.type === 'update-circle') {
-        setCircles(prevCircles => {
-          const existingIndex = prevCircles.findIndex(c => c.id === data.circle.id);
-          if (existingIndex > -1) {
-            return prevCircles.map(c => c.id === data.circle.id ? data.circle : c);
-          } else {
-            return [...prevCircles, data.circle];
-          }
-        });
-      } else if (data.type === 'update-circle-name') {
-        // Assume each message has a timestamp or sequence number
-        const existingCircle = circles.find(c => c.id === data.circleId);
-        if (existingCircle) {
-          // Only update if the incoming message is newer than the current state
-          if (data.timestamp > existingCircle.lastUpdated) {
-            setCircles(prevCircles =>
-              prevCircles.map(circle =>
-                circle.id === data.circleId ? { ...circle, name: data.newName, lastUpdated: data.timestamp } : circle
-              )
-            );
-          }
-        }
-      }
-       else if (data.type === 'new-connection' || data.type === 'update-connection') {
-        setConnections(prevConnections => {
-          const existingIndex = prevConnections.findIndex(c => c.id === data.connection.id);
-          if (existingIndex > -1) {
-            return prevConnections.map(c => c.id === data.connection.id ? data.connection : c);
-          } else {
-            return [...prevConnections, data.connection];
-          }
-        });
+      } 
+      // Handle new or updated circle
+      else if (['new-circle', 'update-circle'].includes(data.type)) {
+        setCircles(prev => updateOrAddItem(prev, data.circle));
+      } 
+      // Handle name updates
+      else if (data.type === 'update-circle-name') {
+        updateCircleName(data);
+      } 
+      // Handle new or updated connection
+      else if (['new-connection', 'update-connection'].includes(data.type)) {
+        setConnections(prev => updateOrAddItem(prev, data.connection));
       }
     };
-    
-    return () => {
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.close();
-      }
-    };
-  }, [id]);
+  
+    // Clean up WebSocket connection on component unmount
+    return () => ws.current.readyState === WebSocket.OPEN && ws.current.close();
+  }, [id]); // Depend on id to recreate effect if it changes
 
+  useEffect(() => {
+    // Register mouse move and mouse up event listeners to handle dragging and dropping actions.
+    const handleMouseMoveEvent = (e) => handleMouseMove(e);
+    const handleMouseUpEvent = (e) => handleMouseUp(e);
+  
+    document.addEventListener('mousemove', handleMouseMoveEvent);
+    document.addEventListener('mouseup', handleMouseUpEvent);
+  
+    // Cleanup function: Removes the event listeners to prevent memory leaks.
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMoveEvent);
+      document.removeEventListener('mouseup', handleMouseUpEvent);
+    };
+  }, [circles, connections]); 
+
+
+
+  
+  // Helper function to update or add an item (circle or connection)
+  function updateOrAddItem(items, newItem) {
+    const index = items.findIndex(item => item.id === newItem.id);
+    return index > -1
+      ? items.map(item => item.id === newItem.id ? newItem : item)
+      : [...items, newItem];
+  }
+  
+  // Update circle name if the incoming message is newer
+  function updateCircleName(data) {
+    const existingCircle = circles.find(c => c.id === data.circleId);
+    if (existingCircle && data.timestamp > existingCircle.lastUpdated) {
+      setCircles(prev => 
+        prev.map(circle => 
+          circle.id === data.circleId ? { ...circle, name: data.newName, lastUpdated: data.timestamp } : circle
+        )
+      );
+    }
+  }
+  
   const handleCircleMouseDown = (e, circleId) => {
-    console.log(`Circle mouse down: ${circleId}`);
-    // Prevent interaction with ears when moving circles
+    // Early return if dragging an ear to prevent multiple drag operations
     if (isDraggingEarLeft.current || isDraggingEarRight.current) return;
+  
+    // Initialize drag operation
     isDragging.current = false;
     dragStartCircleId.current = circleId;
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startPos = { x: e.clientX, y: e.clientY };
+  
+    // Function to handle mouse movement
     const moveHandler = (moveEvent) => {
-      const moveX = moveEvent.clientX - startX;
-      const moveY = moveEvent.clientY - startY;
-      if (Math.abs(moveX) > DRAG_THRESHOLD || Math.abs(moveY) > DRAG_THRESHOLD) {
+      const moveDist = {
+        x: moveEvent.clientX - startPos.x,
+        y: moveEvent.clientY - startPos.y
+      };
+  
+      // Check if movement exceeds the drag threshold to start dragging
+      if (Math.abs(moveDist.x) > DRAG_THRESHOLD || Math.abs(moveDist.y) > DRAG_THRESHOLD) {
         isDragging.current = true;
-        const updatedCircles = circles.map(circle => circle.id === circleId ? { ...circle, x: circle.x + moveX, y: circle.y + moveY } : circle);
-        setCircles(updatedCircles);
-        ws.current.send(JSON.stringify({ type: 'update-circle', circle: updatedCircles.find(c => c.id === circleId) }));
+        // Update circle position and send update to server
+        updateCirclePosition(circleId, moveDist);
       }
     };
+  
+    // Clean up function to stop drag operation
     const upHandler = () => {
       document.removeEventListener('mousemove', moveHandler);
       document.removeEventListener('mouseup', upHandler);
     };
+  
+    // Register event listeners for mouse move and mouse up
     document.addEventListener('mousemove', moveHandler);
     document.addEventListener('mouseup', upHandler);
   };
-
-  const handleEarMouseDownLeft = (e, circleId) => {
-    console.log(`Left ear mouse down: ${circleId}`);
-    // Prevent default event and bubbling to avoid triggering circle drag
-    e.preventDefault();
-    e.stopPropagation();
-    isDraggingEarLeft.current = true;
-    dragStartCircleId.current = circleId;
-    earDragStartPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const handleEarMouseDownRight = (e, circleId) => {
-    console.log(`Right ear mouse down: ${circleId}`);
-    // Prevent default event and bubbling to avoid triggering circle drag
-    e.preventDefault();
-    e.stopPropagation();
-    isDraggingEarRight.current = true;
-    dragStartCircleId.current = circleId;
-    earDragStartPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-
-const handleMouseUp = (e) => {
-  console.log('Mouse up');
-  if (!isDraggingEarRight.current && !isDraggingEarLeft.current) return;
-
-  const svg = document.querySelector("svg");
-  const rect = svg.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
   
-  const isEndingOnSameCircle = circles.some(circle => {
-    const distance = Math.sqrt((mouseX - circle.x) ** 2 + (mouseY - circle.y) ** 2);
-    return distance < circle.r + 5 && circle.id === dragStartCircleId.current;
-  });
+  // Helper function to update circle position and send update to server
+  function updateCirclePosition(circleId, moveDist) {
+    const updatedCircles = circles.map(circle =>
+      circle.id === circleId ? { ...circle, x: circle.x + moveDist.x, y: circle.y + moveDist.y } : circle
+    );
+  
+    setCircles(updatedCircles);
+    ws.current.send(JSON.stringify({ type: 'update-circle', circle: updatedCircles.find(c => c.id === circleId) }));
+  }
+  
+  const handleEarMouseDown = (e, circleId, isLeftEar) => {
+    // Log which ear was pressed based on the isLeftEar flag
+    console.log(`${isLeftEar ? 'Left' : 'Right'} ear mouse down: ${circleId}`);
+  
+    // Prevent default event and stop propagation to avoid triggering circle drag
+    e.preventDefault();
+    e.stopPropagation();
+  
+    // Set the dragging state and initial position for the correct ear
+    if (isLeftEar) {
+      isDraggingEarLeft.current = true;
+    } else {
+      isDraggingEarRight.current = true;
+    }
+    dragStartCircleId.current = circleId;
+    earDragStartPos.current = { x: e.clientX, y: e.clientY };
+  };
 
-  if (isEndingOnSameCircle) {
-    // If dragging ends on the same circle, do nothing
+  const handleMouseUp = (e) => {
+    console.log('Mouse up');
+    // Exit early if not dragging
+    if (!isDraggingEarRight.current && !isDraggingEarLeft.current) return;
+  
+    // Calculate mouse position relative to the SVG canvas
+    const {left: svgX, top: svgY} = document.querySelector("svg").getBoundingClientRect();
+    const mouseX = e.clientX - svgX;
+    const mouseY = e.clientY - svgY;
+  
+    // Check if drag ended on the same circle it started
+    if (circles.some(circle => Math.hypot(mouseX - circle.x, mouseY - circle.y) < circle.r + 5 && circle.id === dragStartCircleId.current)) {
+      resetDragState();
+      return;
+    }
+  
+    // Find a target circle or create a new circle/connection as needed
+    const targetCircle = findTargetCircle(mouseX, mouseY);
+    targetCircle ? createConnection(targetCircle) : createCircleAndConnection(mouseX, mouseY);
+  
+    resetDragState();
+  };
+  
+  // Resets drag state and temporary line
+  function resetDragState() {
     isDraggingEarRight.current = false;
     isDraggingEarLeft.current = false;
     dragStartCircleId.current = null;
     setTempLine(null);
-    return; // Exit the function to prevent any further action
   }
-
-  const targetCircle = circles.find(circle => {
-    // We calculate distance to both ears and see if any is within a clickable range
-    const leftEarX = circle.x - 35;
-    const rightEarX = circle.x + 35;
-    const distanceToLeftEar = Math.sqrt((leftEarX - mouseX) ** 2 + (circle.y - mouseY) ** 2);
-    const distanceToRightEar = Math.sqrt((rightEarX - mouseX) ** 2 + (circle.y - mouseY) ** 2);
-    return (distanceToLeftEar < 50 || distanceToRightEar < 50) && circle.id !== dragStartCircleId.current;
-  });
-
-  if (targetCircle) {
-    const lr = isDraggingEarLeft.current ? 0 : 1; // Determine the direction based on which ear was dragged
-    const newConnection = {
-      id: uuidv4(),
-      startId: dragStartCircleId.current,
-      endId: targetCircle.id,
-      lr: lr
-    };
-    setConnections([...connections, newConnection]);
-    ws.current.send(JSON.stringify({ type: 'new-connection', connection: newConnection }));
+  
+  // Finds a target circle based on mouse position
+  function findTargetCircle(mouseX, mouseY) {
+    return circles.find(({x, y}) => {
+      const distanceToLeftEar = Math.hypot(mouseX - (x - 35), mouseY - y);
+      const distanceToRightEar = Math.hypot(mouseX - (x + 35), mouseY - y);
+      return (distanceToLeftEar < 50 || distanceToRightEar < 50) && dragStartCircleId.current !== x.id;
+    });
   }
-
-  if (!targetCircle) {
-    const currentNames = circles.map(c => c.name);
-    const newCircle = {
-      id: uuidv4(),
-      x: mouseX,
-      y: mouseY,
-      r: 28,
-      color: "orange",
-      name: getRandomWord(currentNames),
-    };
-
-    // Add the new circle to the state
-    setCircles([...circles, newCircle]);
-
-    // Create a new connection from the ear being dragged to the new circle
+  
+  // Creates a new connection to an existing circle
+  function createConnection(targetCircle) {
     const lr = isDraggingEarLeft.current ? 0 : 1;
-    const newConnection = {
-      id: uuidv4(),
-      startId: dragStartCircleId.current,
-      endId: newCircle.id,
-      lr: lr
-    };
-
-    // Add the new connection to the state
-    setConnections([...connections, newConnection]);
-
-    // Send the new circle and connection to the server
-    ws.current.send(JSON.stringify({ type: 'new-circle', circle: newCircle }));
-    ws.current.send(JSON.stringify({ type: 'new-connection', connection: newConnection }));
+    const newConnection = {id: uuidv4(), startId: dragStartCircleId.current, endId: targetCircle.id, lr};
+    setConnections(prev => [...prev, newConnection]);
+    ws.current.send(JSON.stringify({type: 'new-connection', connection: newConnection}));
+  }
+  
+  // Creates a new circle and connection
+  function createCircleAndConnection(mouseX, mouseY) {
+    const currentNames = circles.map(c => c.name);
+    const newCircle = {id: uuidv4(), x: mouseX, y: mouseY, r: 28, color: "orange", name: getRandomWord(currentNames)};
+    const newConnection = {id: uuidv4(), startId: dragStartCircleId.current, endId: newCircle.id, lr: isDraggingEarLeft.current ? 0 : 1};
+  
+    setCircles(prev => [...prev, newCircle]);
+    setConnections(prev => [...prev, newConnection]);
+  
+    ws.current.send(JSON.stringify({type: 'new-circle', circle: newCircle}));
+    ws.current.send(JSON.stringify({type: 'new-connection', connection: newConnection}));
   }
 
-  isDraggingEarRight.current = false;
-  isDraggingEarLeft.current = false;
-  dragStartCircleId.current = null;
-  setTempLine(null);
-};
+   const renderEars = (circle, isLeftEar) => {
+    // Check various conditions: dragging, connection status, and hover state
+    const isDraggingThisEar = (isLeftEar ? isDraggingEarLeft.current : isDraggingEarRight.current) && dragStartCircleId.current === circle.id;
+    const isConnected = connections.some(conn => (isLeftEar ? conn.endId : conn.startId) === circle.id && conn.lr === 1) || connections.some(conn => (isLeftEar ? conn.startId : conn.endId) === circle.id && conn.lr === 0);
+    const isSameCircleDrag = dragStartCircleId.current === circle.id && (isLeftEar ? isDraggingEarRight.current : isDraggingEarLeft.current);
+    const isPotentialConnection = (isLeftEar ? hoverTargetRefLeft.current : hoverTargetRefRight.current) === circle.id && (isLeftEar ? isDraggingEarRight.current : isDraggingEarLeft.current) && dragStartCircleId.current !== circle.id;
 
-
-  useEffect(() => {
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [circles, connections]);
-
-
-
-  const renderRightEars = (circle) => {
-    const isDraggingThisRightEar = isDraggingEarRight.current && dragStartCircleId.current === circle.id;
-    const isConnectedRight = connections.some(conn => conn.startId === circle.id && conn.lr === 1) || connections.some(conn => conn.endId === circle.id && conn.lr === 0);
-    const isSameCircleDrag = dragStartCircleId.current === circle.id && isDraggingEarLeft.current;
-    const isPotentialConnectionRight = hoverTargetRefRight.current === circle.id && isDraggingEarLeft.current && dragStartCircleId.current !== circle.id;
-    const strokeDasharray = isConnectedRight || isDraggingThisRightEar || isPotentialConnectionRight ? "none" : "3,8";
-    const earRadius = circle.r + 8; 
-    const earStrokeWidth = 3;
-    const transparentStrokeWidth = earStrokeWidth * 5; 
-    const startAngleOffset = 9;
-    const tiltOffset = 5;
-    const d = `
-      M ${circle.x + 23} ,${circle.y - 22 - tiltOffset} 
-      a ${earRadius},${earRadius} 0 0,1.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
-    `;
-    const isHovered = hoveredEar === `right-${circle.id}` && !isSameCircleDrag;
-    const transitionStyle = {
-      transition: 'stroke 0.1s ease-in-out',
-    };
-    const disableHover = isDraggingEarRight.current;
-  
-
-    return (
-      <>
-        <path
-          d={d}
-          fill="none"
-          stroke={(isHovered || isConnectedRight || isDraggingThisRightEar || isPotentialConnectionRight) ? "#9cacb4" : "#cdd5d9"}
-          strokeWidth={earStrokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={strokeDasharray}
-          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
-        />
-        <path
-          d={d}
-          fill="none"
-          stroke="transparent"
-          strokeWidth={transparentStrokeWidth}
-          strokeLinecap="round"
-          onMouseDown={(e) => handleEarMouseDownRight(e, circle.id)}
-          onMouseEnter={() => {
-            if (!disableHover) {
-              console.log(`Mouse enter right ear: ${circle.id}`);
-              setHoveredEar(`right-${circle.id}`);
-              console.log('Setting right hover target:', circle.id);
-              hoverTargetRefRight.current = circle.id;
-            }
-          }}
-          onMouseLeave={() => {
-            console.log(`Mouse leave right ear: ${circle.id}`);
-            setHoveredEar(null);
-            hoverTargetRefRight.current = null;
-          }}
-          style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
-        />
-      </>
-    );
-  };
-  
-
-  const renderLeftEars = (circle) => {
-    const isDraggingThisLeftEar = isDraggingEarLeft.current && dragStartCircleId.current === circle.id;
-    const isConnectedLeft = connections.some(conn => conn.endId === circle.id && conn.lr === 1) || connections.some(conn => conn.startId === circle.id && conn.lr === 0);
-    const isSameCircleDrag = dragStartCircleId.current === circle.id && isDraggingEarRight.current
-    const isPotentialConnection = hoverTargetRefLeft.current === circle.id && isDraggingEarRight.current && dragStartCircleId.current !== circle.id;
-    const strokeDasharray = isConnectedLeft || isDraggingThisLeftEar || isPotentialConnection ? "none" : "3,8";
+    const strokeDasharray = isConnected || isDraggingThisEar || isPotentialConnection ? "none" : "3,8";
     const earRadius = circle.r + 8;
     const earStrokeWidth = 3;
-    const transparentStrokeWidth = earStrokeWidth * 5; 
+    const transparentStrokeWidth = earStrokeWidth * 5;
     const startAngleOffset = 9;
-    const tiltOffset = -5;
-    const d = `
-      M ${circle.x - 23} ,${circle.y - 22 + tiltOffset}  
-      a ${earRadius},${earRadius} 0 0,0.5 ${earRadius*2 - (startAngleOffset * 2)},${tiltOffset * 2}
-    `;
-    const isHovered = hoveredEar === `left-${circle.id}` && !isSameCircleDrag;
-    const transitionStyle = {
-      transition: 'stroke 0.1s ease-in-out',
-    };
-    const disableHover = isDraggingEarLeft.current;
-    
+    const tiltOffset = 5;
+    const d = `M ${circle.x + (isLeftEar ? -23 : 23)} ,${circle.y - 22 - tiltOffset} a ${earRadius},${earRadius} 0 0,${(isLeftEar ? 0.5 : 1.5)} ${earRadius*2 - (startAngleOffset * 2)},0`;
+    const isHovered = hoveredEar === (isLeftEar ? `left-${circle.id}` : `right-${circle.id}`) && !isSameCircleDrag;
+    const transitionStyle = { transition: 'stroke 0.1s ease-in-out' };
+    const disableHover = (isLeftEar ? isDraggingEarLeft.current : isDraggingEarRight.current);
   
     return (
       <>
         <path
           d={d}
           fill="none"
-          stroke={(isHovered || isConnectedLeft || isDraggingThisLeftEar ||  isPotentialConnection)  ? "#9cacb4" : "#cdd5d9"}
+          stroke={(isHovered || isConnected || isDraggingThisEar || isPotentialConnection) ? "#9cacb4" : "#cdd5d9"}
           strokeWidth={earStrokeWidth}
           strokeLinecap="round"
           strokeDasharray={strokeDasharray}
@@ -317,26 +256,15 @@ const handleMouseUp = (e) => {
           stroke="transparent"
           strokeWidth={transparentStrokeWidth}
           strokeLinecap="round"
-          onMouseDown={(e) => handleEarMouseDownLeft(e, circle.id)}
-          onMouseEnter={() => {
-            if (!disableHover) {
-              console.log(`Mouse enter left ear: ${circle.id}`);
-              setHoveredEar(`left-${circle.id}`);
-              console.log('Setting left hover target:', circle.id);
-              hoverTargetRefLeft.current = circle.id;
-              
-            }
-          }}
-          onMouseLeave={() => {
-            console.log(`Mouse leave left ear: ${circle.id}`);
-            setHoveredEar(null);
-            hoverTargetRefLeft.current = null;
-          }}
+          onMouseDown={(e) => handleEarMouseDown(e, circle.id, false)}
+          onMouseEnter={() => !disableHover && (isLeftEar ? setHoveredEar(`left-${circle.id}`) : setHoveredEar(`right-${circle.id}`))}
+          onMouseLeave={() => setHoveredEar(null)}
           style={{ cursor: !disableHover ? 'pointer' : 'default', ...transitionStyle }}
         />
       </>
     );
   };
+
 
 
   const handleMouseMove = (e) => {
@@ -407,8 +335,6 @@ const handleMouseUp = (e) => {
     }
   };
   
-  
-
   const renderConnections = () => connections.map(conn => {
     const startCircle = circles.find(c => c.id === conn.startId);
     const endCircle = circles.find(c => c.id === conn.endId);
@@ -477,35 +403,32 @@ const handleMouseUp = (e) => {
       }
   };
 
-const handleChangeName = (e, circleId) => {
-  e.preventDefault();
-  e.stopPropagation();
+  const handleChangeName = (e, circleId) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-  // Immediate call to update the name to ensure UI responsiveness.
-  const currentCircle = circles.find(c => c.id === circleId);
-  if (!currentCircle) return; // Guard clause if circle not found
+    // Immediate call to update the name to ensure UI responsiveness.
+    const currentCircle = circles.find(c => c.id === circleId);
+    if (!currentCircle) return; // Guard clause if circle not found
 
-  const currentNames = circles.map(c => c.name).filter(name => name !== currentCircle.name);
-  const newName = getRandomWord(currentNames);
+    const currentNames = circles.map(c => c.name).filter(name => name !== currentCircle.name);
+    const newName = getRandomWord(currentNames);
 
-  // Ensure the newName is different and valid
-  if (newName && currentCircle.name !== newName) {
-    // Optimistically update the local state to reflect the change
-    setCircles(prevCircles =>
-      prevCircles.map(circle =>
-        circle.id === circleId ? { ...circle, name: newName, lastUpdated: Date.now() } : circle
-      )
-    );
+    // Ensure the newName is different and valid
+    if (newName && currentCircle.name !== newName) {
+      // Optimistically update the local state to reflect the change
+      setCircles(prevCircles =>
+        prevCircles.map(circle =>
+          circle.id === circleId ? { ...circle, name: newName, lastUpdated: Date.now() } : circle
+        )
+      );
 
-    console.log('Sending update to server:', { circleId, newName });
+      console.log('Sending update to server:', { circleId, newName });
 
-    // Send the update to the server
-    ws.current.send(JSON.stringify({ type: 'update-circle-name', circleId, newName }));
-  }
-};
-
-
-  
+      // Send the update to the server
+      ws.current.send(JSON.stringify({ type: 'update-circle-name', circleId, newName }));
+    }
+  };
 
   const renderCircleNames = (circle) => {
     const name = circle.name || "";
@@ -568,8 +491,8 @@ const handleChangeName = (e, circleId) => {
           style={{ cursor: 'pointer' }}
         />
         {renderCircleNames(circle)}
-        {renderRightEars(circle)}
-        {renderLeftEars(circle)}
+        {renderEars(circle, false)}
+        {renderEars(circle, true)}
       </React.Fragment>
       ))}
       {renderConnections()}
