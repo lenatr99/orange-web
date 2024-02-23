@@ -64,22 +64,48 @@ function DevPage() {
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      // Handle initial setup of circles and connections
-      if (data.type === "initial-circles") {
-        setCircles(data.circles);
-        setConnections(data.connections || []);
-      }
-      // Handle new or updated circle
-      else if (["new-circle", "update-circle"].includes(data.type)) {
-        setCircles((prev) => updateOrAddItem(prev, data.circle));
-      }
-      // Handle name updates
-      else if (data.type === "update-circle-name") {
-        updateCircleName(data);
-      }
-      // Handle new or updated connection
-      else if (["new-connection", "update-connection"].includes(data.type)) {
-        setConnections((prev) => updateOrAddItem(prev, data.connection));
+      switch (data.type) {
+        // Handle initial setup of circles and connections
+        case "initial-circles":
+          setCircles(data.circles);
+          setConnections(data.connections || []);
+          break;
+        case "new-circle":
+          setCircles((prev) => updateOrAddItem(prev, data.circle));
+          break;
+        case "update-circle":
+          setCircles((prev) => updateOrAddItem(prev, data.circle));
+          break;
+        case "update-circle-name":
+          setCircles((circles) =>
+            circles.map((circle) => {
+              return circle.id === data.circleId
+                ? { ...circle, name: data.newName }
+                : circle;
+            })
+          );
+          break;
+        case "new-connection" || "update-connection":
+          setConnections((prev) => updateOrAddItem(prev, data.connection));
+          break;
+        case "update-circle-name":
+          setCircles((circles) =>
+            circles.map((circle) => {
+              return circle.id === data.circleId
+                ? { ...circle, name: data.newName }
+                : circle;
+            })
+          );
+          break;
+        case "update-circle-color":
+          setCircles((circles) =>
+            circles.map((circle) => {
+              return circle.id === data.circle.id
+                ? { ...circle, color: data.circle.color }
+                : circle;
+            })
+          );
+          break;
       }
     };
 
@@ -108,20 +134,6 @@ function DevPage() {
     return index > -1
       ? items.map((item) => (item.id === newItem.id ? newItem : item))
       : [...items, newItem];
-  }
-
-  // Update circle name if the incoming message is newer
-  function updateCircleName(data) {
-    const existingCircle = circles.find((c) => c.id === data.circleId);
-    if (existingCircle && data.timestamp > existingCircle.lastUpdated) {
-      setCircles((prev) =>
-        prev.map((circle) =>
-          circle.id === data.circleId
-            ? { ...circle, name: data.newName, lastUpdated: data.timestamp }
-            : circle
-        )
-      );
-    }
   }
 
   const handleCircleMouseDown = (e, circleId) => {
@@ -546,8 +558,6 @@ function DevPage() {
             : circle
         )
       );
-
-      console.log("Sending update to server:", { circleId, newName });
 
       // Send the update to the server
       ws.current.send(
