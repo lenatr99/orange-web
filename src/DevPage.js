@@ -47,7 +47,7 @@ function DevPage() {
   const earDragStartPos = useRef({ x: 0, y: 0 });
   const isDraggingEarLeft = useRef(false);
   const isDraggingEarRight = useRef(false);
-  const DRAG_THRESHOLD = 20;
+  const dragThreshold = 20;
   const [tempLine, setTempLine] = useState(null);
   const [hoveredEar, setHoveredEar] = useState(null);
   const hoverTargetRefRight = useRef(null);
@@ -154,8 +154,8 @@ function DevPage() {
 
       // Check if movement exceeds the drag threshold to start dragging
       if (
-        Math.abs(moveDist.x) > DRAG_THRESHOLD ||
-        Math.abs(moveDist.y) > DRAG_THRESHOLD
+        Math.abs(moveDist.x) > dragThreshold ||
+        Math.abs(moveDist.y) > dragThreshold
       ) {
         isDragging.current = true;
         // Update circle position and send update to server
