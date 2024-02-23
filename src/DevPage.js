@@ -180,9 +180,6 @@ function DevPage() {
   }
 
   const handleEarMouseDown = (e, circleId, isLeftEar) => {
-    // Log which ear was pressed based on the isLeftEar flag
-    console.log(`${isLeftEar ? "Left" : "Right"} ear mouse down: ${circleId}`);
-
     // Prevent default event and stop propagation to avoid triggering circle drag
     e.preventDefault();
     e.stopPropagation();
@@ -602,23 +599,15 @@ function DevPage() {
             onMouseDown={(e) => handleCircleMouseDown(e, circle.id)}
             onDoubleClick={(e) => handleDoubleClick(e, circle.id)}
             onMouseEnter={() => {
-              console.log(
-                "isdraggingearright",
-                isDraggingEarRight.current,
-                "isdraggingearleft",
-                isDraggingEarLeft.current
-              );
               if (
                 isDraggingEarLeft.current &&
                 dragStartCircleId.current !== circle.id
               ) {
-                console.log(`hovered left circle: ${circle.id}`);
                 hoverTargetRefRight.current = circle.id;
               } else if (
                 isDraggingEarRight.current &&
                 dragStartCircleId.current !== circle.id
               ) {
-                console.log(`hovered right circle: ${circle.id}`);
                 hoverTargetRefLeft.current = circle.id;
               }
             }}
