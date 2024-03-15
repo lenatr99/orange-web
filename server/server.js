@@ -90,6 +90,21 @@ wss.on('connection', function connection(ws, request, id) {
               broadcastMessage(id, JSON.stringify({ type: 'update-circle-name', circleId: data.circleId, newName: data.newName }), ws);
             }
             break;
+        case 'delete-connection':
+            // Find and remove the specified connection
+            const connectionIndexToRemove = state.connections.findIndex(conn => conn.id === data.connectionId);
+            if (connectionIndexToRemove !== -1) {
+                state.connections.splice(connectionIndexToRemove, 1); // Remove the connection
+                broadcastMessage(id, JSON.stringify({ type: 'delete-connection', connectionId: data.connectionId }), ws);
+            }
+            break;
+        case 'delete-circle':
+            const circleIndexToRemove = state.circles.findIndex(circle => circle.id === data.circleId);
+            if (circleIndexToRemove !== -1) {
+                state.circles.splice(circleIndexToRemove, 1);
+                broadcastMessage(id, JSON.stringify({ type: 'delete-circle', circleId: data.circleId }), ws);
+            }
+            break;
     }
   });
 

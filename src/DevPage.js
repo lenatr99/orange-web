@@ -52,6 +52,8 @@ function DevPage() {
   const [hoveredEar, setHoveredEar] = useState(null);
   const hoverTargetRefRight = useRef(null);
   const hoverTargetRefLeft = useRef(null);
+  const [hoveredConnectionId, setHoveredConnectionId] = useState(null);
+  const [hoveredCircleId, setHoveredCircleId] = useState(null);
 
   // useEffect is a React hook for managing side effects in function components
   useEffect(() => {
@@ -106,6 +108,16 @@ function DevPage() {
             })
           );
           break;
+        case "delete-connection":
+          setConnections((connections) =>
+            connections.filter((conn) => conn.id !== data.connectionId)
+          );
+          break;
+        case "delete-circle":
+          setCircles((circles) =>
+            circles.filter((circle) => circle.id !== data.circleId)
+          );
+          break;
       }
     };
 
@@ -127,6 +139,41 @@ function DevPage() {
       document.removeEventListener("mouseup", handleMouseUpEvent);
     };
   }, [circles, connections]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Delete" && hoveredConnectionId) {
+        // Delete the hovered connection
+        setConnections(connections =>
+          connections.filter(conn => conn.id !== hoveredConnectionId)
+        );
+        // Send delete message to server, you might need to define the message type and handling on the server
+        ws.current.send(JSON.stringify({ type: "delete-connection", connectionId: hoveredConnectionId }));
+        setHoveredConnectionId(null); // Reset hovered connection
+      }
+    };
+  
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hoveredConnectionId, connections]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Delete") {
+        if (hoveredCircleId) {
+          // Delete the hovered circle
+          setCircles(circles => circles.filter(circle => circle.id !== hoveredCircleId));
+          // Optionally send delete message to server
+          ws.current.send(JSON.stringify({ type: "delete-circle", circleId: hoveredCircleId }));
+          setHoveredCircleId(null); // Reset hovered circle
+        }
+      }
+    };
+  
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hoveredCircleId, circles]);
+  
 
   // Helper function to update or add an item (circle or connection)
   function updateOrAddItem(items, newItem) {
@@ -471,13 +518,21 @@ function DevPage() {
 
       const d = `M${startEarX},${startCircle.y} C${cp1x},${startCircle.y} ${cp2x},${endCircle.y} ${endEarX},${endCircle.y}`;
 
+      const isHovered = conn.id === hoveredConnectionId;
+      const stroke = isHovered ? "#ff9800" : "#9cacb4"; // Change color on hover
+      const strokeWidth = isHovered ? "4" : "2"; // Make line thicker on hover
+      const cursorStyle = isHovered ? "pointer" : "default";  
+
       return (
         <path
           key={conn.id}
           d={d}
-          stroke="#9cacb4"
-          strokeWidth="2"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
           fill="none"
+          onMouseEnter={() => setHoveredConnectionId(conn.id)}
+          onMouseLeave={() => setHoveredConnectionId(null)}
+          style={{ cursor: cursorStyle }}
         />
       );
     });
@@ -609,6 +664,7 @@ function DevPage() {
             onMouseDown={(e) => handleCircleMouseDown(e, circle.id)}
             onDoubleClick={(e) => handleDoubleClick(e, circle.id)}
             onMouseEnter={() => {
+              setHoveredCircleId(circle.id);
               if (
                 isDraggingEarLeft.current &&
                 dragStartCircleId.current !== circle.id
@@ -622,6 +678,7 @@ function DevPage() {
               }
             }}
             onMouseLeave={() => {
+              setHoveredCircleId(null)
               hoverTargetRefRight.current = null;
               hoverTargetRefLeft.current = circle.null;
             }}
