@@ -156,25 +156,39 @@ function DevPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [hoveredConnectionId, connections]);
-
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "Delete") {
         if (hoveredCircleId) {
-          // Delete the hovered circle
-          setCircles(circles => circles.filter(circle => circle.id !== hoveredCircleId));
-          // Optionally send delete message to server
-          ws.current.send(JSON.stringify({ type: "delete-circle", circleId: hoveredCircleId }));
+          // Find all connections involving the hovered circle
+          const connectionsToDelete = connections.filter(conn => 
+            conn.startId === hoveredCircleId || conn.endId === hoveredCircleId
+          );
+  
+          // Remove the hovered circle and its connections
+          const updatedCircles = circles.filter(circle => circle.id !== hoveredCircleId);
+          const updatedConnections = connections.filter(conn => 
+            conn.startId !== hoveredCircleId && conn.endId !== hoveredCircleId
+          );
+  
+          // Update states
+          setCircles(updatedCircles);
+          setConnections(updatedConnections);
           setHoveredCircleId(null); // Reset hovered circle
+  
+          // Optionally, send delete messages to the server
+          ws.current.send(JSON.stringify({ type: "delete-circle", circleId: hoveredCircleId }));
+          connectionsToDelete.forEach(conn => {
+            ws.current.send(JSON.stringify({ type: "delete-connection", connectionId: conn.id }));
+          });
         }
       }
     };
   
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [hoveredCircleId, circles]);
+  }, [hoveredCircleId, circles, connections]);
   
-
   // Helper function to update or add an item (circle or connection)
   function updateOrAddItem(items, newItem) {
     const index = items.findIndex((item) => item.id === newItem.id);
